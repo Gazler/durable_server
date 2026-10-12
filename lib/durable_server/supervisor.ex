@@ -3431,10 +3431,7 @@ defmodule DurableServer.Supervisor do
     task_sup = Keyword.get(opts, :task_supervisor, DurableServer.TaskSupervisor)
 
     backend_resources = build_backend_resources(opts, finch, task_sup)
-
-    Enum.each(backend_resources.ensure_ready_backends, fn backend ->
-      :ok = StorageBackend.ensure_ready(backend)
-    end)
+    ensure_backends_ready!(backend_resources.ensure_ready_backends)
 
     storage_backend = backend_resources.storage_backend
     heartbeat_backend = backend_resources.heartbeat_backend
@@ -3755,6 +3752,22 @@ defmodule DurableServer.Supervisor do
         ]
 
     Supervisor.init(children, strategy: :one_for_all)
+  end
+
+  defp ensure_backends_ready!(backends) do
+    Enum.each(backends, fn %StorageBackend{adapter: adapter} = backend ->
+      case StorageBackend.ensure_ready(backend) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          exit({:backend_unavailable, adapter, reason})
+
+        other ->
+          raise ArgumentError,
+                "#{inspect(adapter)}.ensure_ready/1 returned invalid result: #{inspect(other)}"
+      end
+    end)
   end
 
   @doc false
